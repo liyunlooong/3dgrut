@@ -580,7 +580,9 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         return mask
 
     def clamp_density(self):
-        updated_densities = torch.clamp(self.get_density(), min=1e-4, max=1.0 - 1e-4)
+        updated_densities = torch.clamp(
+            self.get_density(), min=-1.0 + 1e-4, max=1.0 - 1e-4
+        )
         optimizable_tensors = self.replace_tensor_to_optimizer(updated_densities, "density")
         self.density = optimizable_tensors["density"]
 

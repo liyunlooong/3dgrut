@@ -90,7 +90,7 @@ class MCMCStrategy(BaseStrategy):
 
     @torch.no_grad()
     def relocate_gaussians(self) -> None:
-        # Get the per Gaussian densities and scales (after sigmoid)
+        # Get the per-Gaussian densities and scales after applying the activation
         densities = self.model.get_density()
         # Find the dead indices
         dead_idxs = torch.where(densities <= self.conf.strategy.opacity_threshold)[0]
@@ -190,7 +190,11 @@ class MCMCStrategy(BaseStrategy):
         )
 
         new_densities = self.model.density_activation_inv(
-            torch.clamp(new_densities, max=1.0 - torch.finfo(torch.float32).eps, min=self.conf.strategy.opacity_threshold)
+            torch.clamp(
+                new_densities,
+                max=1.0 - torch.finfo(torch.float32).eps,
+                min=-1.0 + torch.finfo(torch.float32).eps,
+            )
         )
 
         new_scales = self.model.scale_activation_inv(new_scales)

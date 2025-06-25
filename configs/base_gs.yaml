@@ -51,7 +51,7 @@ export_usdz:
   apply_normalizing_transform: true
 
 model:
-  density_activation: sigmoid
+  density_activation: tanh
   scale_activation: exp
   default_density: 0.1
   default_scale_factor: 1.0
