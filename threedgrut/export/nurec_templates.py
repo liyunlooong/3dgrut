@@ -113,7 +113,7 @@ def fill_3dgut_template(
     features_albedo: np.ndarray,
     features_specular: np.ndarray,
     n_active_features: int,
-    density_activation: str = "sigmoid",
+    density_activation: str = "tanh",
     scale_activation: str = "exp",
     rotation_activation: str = "normalize",
     density_kernel_degree: int = 2,

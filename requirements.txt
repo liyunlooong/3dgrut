@@ -2,6 +2,7 @@ plyfile
 torchmetrics
 tensorboard
 fire
+numpy<2
 omegaconf
 hydra-core
 scikit-learn
