@@ -79,9 +79,10 @@ checkpoint:
   iterations: ${int_list:[ 7000, 30000 ]}
 
 optimizer:
-  type: adam # We only support adam and selective_adam for now
+  type: adam # Supported types: [adam, selective_adam, sghmc]
   lr: 0.0
   eps: 1.e-15
+  momentum: 0.9
   params:
     positions:
       lr: 0.00016 # 3DGS value: 0.00016 initial and decayed to 0.0000016

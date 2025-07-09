@@ -40,7 +40,7 @@ from threedgrut.utils.misc import (
     to_np, to_torch, quaternion_to_so3
 )
 from threedgrut.utils.render import RGB2SH
-from threedgrut.optimizers import SelectiveAdam
+from threedgrut.optimizers import SelectiveAdam, SGHMC
 
 class MixtureOfGaussians(torch.nn.Module, ExportableModel):
     """ """
@@ -512,6 +512,13 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         elif self.conf.optimizer.type == "selective_adam":
             self.optimizer = SelectiveAdam(params, lr=self.conf.optimizer.lr, eps=self.conf.optimizer.eps)
             logger.info("🔆 Using Selective Adam optimizer")
+        elif self.conf.optimizer.type == "sghmc":
+            self.optimizer = SGHMC(
+                params,
+                lr=self.conf.optimizer.lr,
+                momentum=self.conf.optimizer.momentum,
+            )
+            logger.info("🔆 Using SGHMC optimizer")
         else:
             raise ValueError(f"Unknown optimizer type: {self.conf.optimizer.type}")
 

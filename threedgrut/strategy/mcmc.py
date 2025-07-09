@@ -198,5 +198,4 @@ class MCMCStrategy(BaseStrategy):
         )
 
         new_scales = self.model.scale_activation_inv(new_scales)
-
         return sampled_idxs, new_densities, new_scales
