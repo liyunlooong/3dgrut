@@ -242,8 +242,11 @@ class GSStrategy(BaseStrategy):
         self.prune_densification_buffers(mask)
 
     def prune_gaussians_opacity(self):
-        # Prune the Gaussians based on their opacity
-        mask = self.model.get_density().squeeze() >= self.prune_density_threshold
+        # Prune the Gaussians based on the magnitude of their opacity
+        mask = (
+            self.model.get_density().squeeze().abs()
+            >= self.prune_density_threshold
+        )
 
         if self.conf.strategy.print_stats:
             n_before = mask.shape[0]
