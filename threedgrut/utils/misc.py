@@ -46,7 +46,9 @@ def inverse_sigmoid(x):
 
 
 def inverse_tanh(x: torch.Tensor) -> torch.Tensor:
-    """Inverse hyperbolic tangent."""
+    """Inverse hyperbolic tangent with input clamping."""
+    eps = torch.finfo(x.dtype).eps
+    x = torch.clamp(x, min=-1.0 + eps, max=1.0 - eps)
     return 0.5 * torch.log((1 + x) / (1 - x))
 
 
