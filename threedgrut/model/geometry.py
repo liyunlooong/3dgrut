@@ -14,46 +14,57 @@
 # limitations under the License.
 
 
-import numpy as np
-import sklearn.neighbors
+try:
+    import numpy as np
+    import sklearn.neighbors
+    _HAS_SKLEARN = True
+except Exception:  # pragma: no cover - optional dependency
+    np = None
+    sklearn = None
+    _HAS_SKLEARN = False
 import torch
 
 from threedgrut.utils.misc import to_np
 
 
 def k_nearest_neighbors(x: torch.Tensor, K: int = 4) -> torch.Tensor:
-    x_np = x.cpu().numpy()
-    model = sklearn.neighbors.NearestNeighbors(
-        n_neighbors=K,
-        metric="euclidean",
-    ).fit(x_np)
-    distances, _ = model.kneighbors(x_np)
-    return torch.from_numpy(distances).to(x)
+    if _HAS_SKLEARN:
+        x_np = x.cpu().numpy()
+        model = sklearn.neighbors.NearestNeighbors(n_neighbors=K, metric="euclidean").fit(x_np)
+        distances, _ = model.kneighbors(x_np)
+        return torch.from_numpy(distances).to(x)
+    # Fallback implementation using PyTorch when sklearn/NumPy are unavailable
+    chunk_size = 1024
+    dists = []
+    for start in range(0, x.shape[0], chunk_size):
+        end = min(start + chunk_size, x.shape[0])
+        dist = torch.cdist(x[start:end], x)
+        k_d, _ = dist.topk(K, largest=False)
+        dists.append(k_d)
+    return torch.cat(dists, dim=0)
 
 
-def nearest_neighbors(pts_src, k=2):
-    pts_src_np = to_np(pts_src)
+def nearest_neighbors(pts_src: torch.Tensor, k: int = 2) -> torch.Tensor:
+    if _HAS_SKLEARN:
+        pts_src_np = to_np(pts_src)
+        kd_tree = sklearn.neighbors.KDTree(pts_src_np)
+        _, neighbors = kd_tree.query(pts_src_np, k=k)
+        mask = neighbors != np.arange(neighbors.shape[0])[:, np.newaxis]
+        mask[np.sum(mask, axis=1) == mask.shape[1], -1] = False
+        neighbors = neighbors[mask].reshape((neighbors.shape[0], k - 1))
+        neigh_inds = torch.tensor(neighbors, device=pts_src.device, dtype=torch.int64)
+        return neigh_inds
 
-    # distance from a point set to itself
-    pts_target = pts_src
-    pts_target_np = pts_src_np
-
-    # Build the tree
-    kd_tree = sklearn.neighbors.KDTree(pts_target_np)
-
-    # Query it
-    _, neighbors = kd_tree.query(pts_src_np, k=k)
-
-    # Mask out self element
-    mask = neighbors != np.arange(neighbors.shape[0])[:, np.newaxis]
-
-    # make sure we mask out exactly one element in each row, in rare case of many duplicate points
-    mask[np.sum(mask, axis=1) == mask.shape[1], -1] = False
-    neighbors = neighbors[mask].reshape((neighbors.shape[0], k - 1))
-
-    # recompute distances in torch, so the function is differentiable
-    neigh_inds = torch.tensor(neighbors, device=pts_src.device, dtype=torch.int64)
-    return neigh_inds
+    # Fallback pure PyTorch implementation
+    chunk_size = 1024
+    indices = []
+    for start in range(0, pts_src.shape[0], chunk_size):
+        end = min(start + chunk_size, pts_src.shape[0])
+        dist = torch.cdist(pts_src[start:end], pts_src)
+        dist[torch.arange(end - start), start:end] = float('inf')
+        _, idx = dist.topk(k - 1, largest=False)
+        indices.append(idx)
+    return torch.cat(indices, dim=0)
 
 
 def nearest_neighbor_dist_cpuKD(pts_src, pts_target=None):
@@ -63,41 +74,51 @@ def nearest_neighbor_dist_cpuKD(pts_src, pts_target=None):
     to args computes distance from each point in src to target
     """
 
-    pts_src_np = to_np(pts_src)
+    if _HAS_SKLEARN:
+        pts_src_np = to_np(pts_src)
 
+        if pts_target is None:
+            on_self = True
+            k = 2
+            pts_target = pts_src
+            pts_target_np = pts_src_np
+        else:
+            on_self = False
+            k = 1
+            pts_target_np = to_np(pts_target)
+
+        kd_tree = sklearn.neighbors.KDTree(pts_target_np)
+        _, neighbors = kd_tree.query(pts_src_np, k=k)
+
+        if on_self:
+            mask = neighbors != np.arange(neighbors.shape[0])[:, np.newaxis]
+            mask[np.sum(mask, axis=1) == mask.shape[1], -1] = False
+            neighbors = neighbors[mask].reshape((neighbors.shape[0],))
+        else:
+            neighbors = neighbors[:, 0]
+
+        neigh_inds = torch.tensor(neighbors, device=pts_src.device, dtype=torch.int64)
+        dists = torch.linalg.norm(pts_src - pts_target[neigh_inds, :], dim=-1)
+        return dists
+
+    # Fallback using chunked torch.cdist
     if pts_target is None:
-        # distance from a point set to itself
-        on_self = True
-        k = 2
         pts_target = pts_src
-        pts_target_np = pts_src_np
+        on_self = True
     else:
-        # distance between two point sets
         on_self = False
-        k = 1
-        pts_target_np = to_np(pts_target)
 
-    # Build the tree
-    kd_tree = sklearn.neighbors.KDTree(pts_target_np)
-
-    # Query it
-    _, neighbors = kd_tree.query(pts_src_np, k=k)
-
-    # Mask out self element
-    if on_self:
-        mask = neighbors != np.arange(neighbors.shape[0])[:, np.newaxis]
-
-        # make sure we mask out exactly one element in each row, in rare case of many duplicate points
-        mask[np.sum(mask, axis=1) == mask.shape[1], -1] = False
-        neighbors = neighbors[mask].reshape((neighbors.shape[0],))
-    else:
-        neighbors = neighbors[:, 0]
-
-    # recompute distances in torch, so the function is differentiable
-    neigh_inds = torch.tensor(neighbors, device=pts_src.device, dtype=torch.int64)
-    dists = torch.linalg.norm(pts_src - pts_target[neigh_inds, :], dim=-1)
-
-    return dists
+    chunk_size = 1024
+    dists_all = []
+    for start in range(0, pts_src.shape[0], chunk_size):
+        end = min(start + chunk_size, pts_src.shape[0])
+        dist = torch.cdist(pts_src[start:end], pts_target)
+        if on_self:
+            diag_indices = torch.arange(start, end, device=pts_src.device)
+            dist[torch.arange(end - start), diag_indices] = float('inf')
+        min_d = dist.min(dim=1).values
+        dists_all.append(min_d)
+    return torch.cat(dists_all, dim=0)
 
 
 def safe_normalize(vecs):
