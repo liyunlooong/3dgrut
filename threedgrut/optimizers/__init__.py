@@ -24,7 +24,6 @@
 
 
 import torch
-import math
 
 
 _optimizer_plugin = None
@@ -130,55 +129,3 @@ class SelectiveAdam(torch.optim.Adam):
                 beta2,
                 eps,
             )
-
-
-class SGHMC(torch.optim.Optimizer):
-    """Stochastic Gradient Hamiltonian Monte Carlo optimizer.
-
-    This optimizer follows the formulation used in the
-    `3D Student Splatting and Scooping` paper and performs
-    Hamiltonian Monte Carlo updates with stochastic gradients.
-
-    Args:
-        params: Iterable of parameters to optimize or ``dict`` s defining
-            parameter groups.
-        lr: Step size used for the parameter updates.
-        alpha: Momentum decay factor controlling friction.
-        temperature: Temperature of the injected noise. ``1.0`` corresponds
-            to standard SGHMC noise level.
-    """
-
-    def __init__(self, params, lr=1e-4, alpha=0.01, temperature=1.0):
-        defaults = dict(lr=lr, alpha=alpha, temperature=temperature)
-        super().__init__(params, defaults)
-
-    @torch.no_grad()
-    def step(self, closure=None):
-        loss = None
-        if closure is not None:
-            with torch.enable_grad():
-                loss = closure()
-
-        for group in self.param_groups:
-            lr = group["lr"]
-            alpha = group["alpha"]
-            temperature = group["temperature"]
-
-            for p in group["params"]:
-                if p.grad is None:
-                    continue
-
-                state = self.state[p]
-                if len(state) == 0:
-                    state["momentum"] = torch.zeros_like(p)
-
-                momentum = state["momentum"]
-
-                noise_std = math.sqrt(2.0 * alpha * lr * temperature)
-                momentum.mul_(1 - alpha)
-                momentum.add_(p.grad, alpha=-lr)
-                momentum.add_(torch.randn_like(p) * noise_std)
-
-                p.add_(momentum)
-
-        return loss
