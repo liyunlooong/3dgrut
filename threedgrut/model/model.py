@@ -210,7 +210,7 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
             points_file = os.path.join(root_path, "colmap", "points3D.txt")
             pts, rgb, _ = read_colmap_points3D_text(points_file)
             file_pts = torch.tensor(pts, dtype=torch.float32, device=self.device)
-            file_rgb = torch.tensor(rgb, dtype=torch.uint8, device=self.device)
+            file_rgb = torch.tensor(rgb.astype(np.uint8), dtype=torch.uint8, device=self.device)
 
         else:
             points_file = os.path.join(root_path, "sparse/0", "points3D.bin")
@@ -219,7 +219,7 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
                 points_file = os.path.join(root_path, "sparse/0", "points3D.txt")
                 pts, rgb, _ = read_colmap_points3D_text(points_file)
                 file_pts = torch.tensor(pts, dtype=torch.float32, device=self.device)
-                file_rgb = torch.tensor(rgb, dtype=torch.uint8, device=self.device)
+                file_rgb = torch.tensor(rgb.astype(np.uint8), dtype=torch.uint8, device=self.device)
             else:
 
                 with open(points_file, "rb") as file:
@@ -241,7 +241,7 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
                         read_next_bytes(file, num_bytes=8 * t_len, format_char_sequence="ii" * t_len)
 
                 file_pts = torch.tensor(file_pts, dtype=torch.float32, device=self.device)
-                file_rgb = torch.tensor(file_rgb, dtype=torch.uint8, device=self.device)
+                file_rgb = torch.tensor(file_rgb.astype(np.uint8), dtype=torch.uint8, device=self.device)
 
         assert file_rgb.dtype == torch.uint8, "Expecting RGB values to be in [0, 255] range"
         self.default_initialize_from_points(file_pts, observer_pts, file_rgb, 
