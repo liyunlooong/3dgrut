@@ -512,6 +512,15 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         elif self.conf.optimizer.type == "selective_adam":
             self.optimizer = SelectiveAdam(params, lr=self.conf.optimizer.lr, eps=self.conf.optimizer.eps)
             logger.info("🔆 Using Selective Adam optimizer")
+        elif self.conf.optimizer.type == "sghmc":
+            from threedgrut.optimizers import SGHMC
+            self.optimizer = SGHMC(
+                params,
+                lr=self.conf.optimizer.lr,
+                alpha=self.conf.optimizer.alpha,
+                temperature=self.conf.optimizer.temperature,
+            )
+            logger.info("🔆 Using SGHMC optimizer")
         else:
             raise ValueError(f"Unknown optimizer type: {self.conf.optimizer.type}")
 
