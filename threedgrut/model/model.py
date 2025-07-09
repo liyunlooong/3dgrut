@@ -40,7 +40,7 @@ from threedgrut.utils.misc import (
     to_np, to_torch, quaternion_to_so3
 )
 from threedgrut.utils.render import RGB2SH
-from threedgrut.optimizers import SelectiveAdam
+from threedgrut.optimizers import SelectiveAdam, SGHMC
 
 class MixtureOfGaussians(torch.nn.Module, ExportableModel):
     """ """
@@ -512,6 +512,13 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         elif self.conf.optimizer.type == "selective_adam":
             self.optimizer = SelectiveAdam(params, lr=self.conf.optimizer.lr, eps=self.conf.optimizer.eps)
             logger.info("🔆 Using Selective Adam optimizer")
+        elif self.conf.optimizer.type == "sghmc":
+            self.optimizer = SGHMC(
+                params,
+                lr=self.conf.optimizer.lr,
+                momentum=self.conf.optimizer.momentum,
+            )
+            logger.info("🔆 Using SGHMC optimizer")
         else:
             raise ValueError(f"Unknown optimizer type: {self.conf.optimizer.type}")
 
@@ -580,7 +587,9 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         return mask
 
     def clamp_density(self):
-        updated_densities = torch.clamp(self.get_density(), min=1e-4, max=1.0 - 1e-4)
+        updated_densities = torch.clamp(
+            self.get_density(), min=-1.0 + 1e-4, max=1.0 - 1e-4
+        )
         optimizable_tensors = self.replace_tensor_to_optimizer(updated_densities, "density")
         self.density = optimizable_tensors["density"]
 
