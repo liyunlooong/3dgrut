@@ -66,7 +66,7 @@ class GSStrategy(BaseStrategy):
                 self.update_gradient_buffer(sensor_position=batch.T_to_world[0, :3, 3])
 
         # Clamp density
-        if check_step_condition(step, 0, -1, 1) and self.conf.model.density_activation == "none":
+        if check_step_condition(step, 0, -1, 1) and self.conf.model.density_activation in ["none", "tanh"]:
             with torch.cuda.nvtx.range(f"train_{step}_clamp_density"):
                 self.model.clamp_density()
 
