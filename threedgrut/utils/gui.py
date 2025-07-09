@@ -236,7 +236,7 @@ class GUI:
                     show_fullscreen=True,
                     show_in_imgui_window=False,
                     cmap="blues",
-                    vminmax=(0, 1),
+                    vminmax=(-1, 1),
                 )
 
                 self.viz_render_color_buffer = None
@@ -274,7 +274,7 @@ class GUI:
                     show_fullscreen=True,
                     show_in_imgui_window=False,
                     cmap="jet",
-                    vminmax=(0, 1),
+                    vminmax=(-1, 1),
                 )
 
                 self.viz_render_color_buffer = None
