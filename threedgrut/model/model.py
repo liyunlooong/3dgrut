@@ -40,7 +40,7 @@ from threedgrut.utils.misc import (
     to_np, to_torch, quaternion_to_so3
 )
 from threedgrut.utils.render import RGB2SH
-from threedgrut.optimizers import SelectiveAdam
+from threedgrut.optimizers import SelectiveAdam, SGHMC
 
 class MixtureOfGaussians(torch.nn.Module, ExportableModel):
     """ """
@@ -210,7 +210,7 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
             points_file = os.path.join(root_path, "colmap", "points3D.txt")
             pts, rgb, _ = read_colmap_points3D_text(points_file)
             file_pts = torch.tensor(pts, dtype=torch.float32, device=self.device)
-            file_rgb = torch.tensor(rgb, dtype=torch.uint8, device=self.device)
+            file_rgb = torch.tensor(rgb.astype(np.uint8), dtype=torch.uint8, device=self.device)
 
         else:
             points_file = os.path.join(root_path, "sparse/0", "points3D.bin")
@@ -219,7 +219,7 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
                 points_file = os.path.join(root_path, "sparse/0", "points3D.txt")
                 pts, rgb, _ = read_colmap_points3D_text(points_file)
                 file_pts = torch.tensor(pts, dtype=torch.float32, device=self.device)
-                file_rgb = torch.tensor(rgb, dtype=torch.uint8, device=self.device)
+                file_rgb = torch.tensor(rgb.astype(np.uint8), dtype=torch.uint8, device=self.device)
             else:
 
                 with open(points_file, "rb") as file:
@@ -227,13 +227,13 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
                     logger.info(f"Found {n_pts} colmap points")
 
                     file_pts = np.zeros((n_pts, 3), dtype=np.float32)
-                    file_rgb = np.zeros((n_pts, 3), dtype=np.float32)
+                    file_rgb = np.zeros((n_pts, 3), dtype=np.uint8)
 
                     for i_pt in range(n_pts):
                         # read the points
                         pt_data = read_next_bytes(file, 43, "QdddBBBd")
                         file_pts[i_pt, :] = np.array(pt_data[1:4])
-                        file_rgb[i_pt, :] = np.array(pt_data[4:7])
+                        file_rgb[i_pt, :] = np.array(pt_data[4:7], dtype=np.uint8)
                         # NOTE: error stored in last element of file, currently not used
 
                         # skip the track data
@@ -512,6 +512,13 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         elif self.conf.optimizer.type == "selective_adam":
             self.optimizer = SelectiveAdam(params, lr=self.conf.optimizer.lr, eps=self.conf.optimizer.eps)
             logger.info("🔆 Using Selective Adam optimizer")
+        elif self.conf.optimizer.type == "sghmc":
+            self.optimizer = SGHMC(
+                params,
+                lr=self.conf.optimizer.lr,
+                momentum=self.conf.optimizer.momentum,
+            )
+            logger.info("🔆 Using SGHMC optimizer")
         else:
             raise ValueError(f"Unknown optimizer type: {self.conf.optimizer.type}")
 
@@ -580,7 +587,9 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         return mask
 
     def clamp_density(self):
-        updated_densities = torch.clamp(self.get_density(), min=1e-4, max=1.0 - 1e-4)
+        updated_densities = torch.clamp(
+            self.get_density(), min=-1.0 + 1e-4, max=1.0 - 1e-4
+        )
         optimizable_tensors = self.replace_tensor_to_optimizer(updated_densities, "density")
         self.density = optimizable_tensors["density"]
 

@@ -45,8 +45,14 @@ def inverse_sigmoid(x):
     return torch.log(x / (1 - x))
 
 
+def inverse_tanh(x: torch.Tensor) -> torch.Tensor:
+    """Inverse hyperbolic tangent."""
+    return 0.5 * torch.log((1 + x) / (1 - x))
+
+
 ACTIVATION_DICT: dict[str, Callable[..., torch.Tensor]] = {
     "sigmoid": torch.sigmoid,
+    "tanh": torch.tanh,
     "exp": torch.exp,
     "normalize": torch.nn.functional.normalize,
     "none": lambda x: x,
@@ -54,6 +60,7 @@ ACTIVATION_DICT: dict[str, Callable[..., torch.Tensor]] = {
 
 INVERSE_ACTIVATION_DICT: dict[str, Callable[..., torch.Tensor]] = {
     "sigmoid": inverse_sigmoid,
+    "tanh": inverse_tanh,
     "exp": torch.log,
     "none": lambda x: x,
 }
