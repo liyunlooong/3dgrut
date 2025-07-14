@@ -83,7 +83,8 @@ checkpoint:
   iterations: ${int_list:[ 7000, 30000 ]}
 
 optimizer:
-  type: adam # Supported types: [adam, selective_adam, sghmc, fisher_sgd]
+  type: adam # Supported types: [adam, selective_adam, sghmc]
+
   lr: 0.0
   eps: 1.e-15
   momentum: 0.9
