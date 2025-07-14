@@ -164,7 +164,6 @@ class SGHMC(torch.optim.Optimizer):
 
         return None
 
-
 class FisherSGD(torch.optim.Optimizer):
     """SGD with a running Fisher information preconditioner."""
 
@@ -195,3 +194,4 @@ class FisherSGD(torch.optim.Optimizer):
                 p.add_(buf, alpha=-lr)
 
         return None
+
