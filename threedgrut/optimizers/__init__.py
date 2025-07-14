@@ -163,3 +163,35 @@ class SGHMC(torch.optim.Optimizer):
                 p.add_(buf, alpha=-lr)
 
         return None
+
+class FisherSGD(torch.optim.Optimizer):
+    """SGD with a running Fisher information preconditioner."""
+
+    def __init__(self, params, lr=1e-3, momentum=0.0, damping=1e-5, alpha=0.95):
+        defaults = dict(lr=lr, momentum=momentum, damping=damping, alpha=alpha)
+        super().__init__(params, defaults)
+
+    @torch.no_grad()
+    def step(self, closure=None):
+        for group in self.param_groups:
+            lr = group["lr"]
+            momentum = group["momentum"]
+            damping = group["damping"]
+            alpha = group["alpha"]
+
+            for p in group["params"]:
+                if p.grad is None:
+                    continue
+                grad = p.grad
+                state = self.state.setdefault(p, {})
+                if "fisher" not in state:
+                    state["fisher"] = torch.zeros_like(p)
+                    state["momentum_buffer"] = torch.zeros_like(p)
+                state["fisher"].mul_(alpha).addcmul_(grad, grad, value=1 - alpha)
+                precond = grad / (state["fisher"].sqrt() + damping)
+                buf = state["momentum_buffer"]
+                buf.mul_(momentum).add_(precond)
+                p.add_(buf, alpha=-lr)
+
+        return None
+

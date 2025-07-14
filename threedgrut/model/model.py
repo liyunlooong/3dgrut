@@ -40,7 +40,8 @@ from threedgrut.utils.misc import (
     to_np, to_torch, quaternion_to_so3
 )
 from threedgrut.utils.render import RGB2SH
-from threedgrut.optimizers import SelectiveAdam, SGHMC
+from threedgrut.optimizers import SelectiveAdam, SGHMC, FisherSGD
+
 
 class MixtureOfGaussians(torch.nn.Module, ExportableModel):
     """ """
@@ -57,6 +58,15 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         ]
 
     def get_positions(self) -> torch.Tensor:
+        if self.use_unscented_transform:
+            from threedgrut.utils.unscented import unscented_transform
+
+            cov = torch.eye(3, device=self.positions.device, dtype=self.positions.dtype).unsqueeze(0).expand(self.positions.shape[0], 3, 3) * 1e-4
+            transform = lambda x: x
+            mean, _ = unscented_transform(
+                self.positions, cov, transform, self.ut_alpha, self.ut_beta, self.ut_kappa
+            )
+            return mean
         return self.positions
 
     def get_max_n_features(self) -> int:
@@ -156,6 +166,10 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
 
         self.conf = conf
         self.scene_extent = scene_extent
+        self.use_unscented_transform = self.conf.model.use_unscented_transform
+        self.ut_alpha = getattr(self.conf.model, "ut_alpha", 1.0)
+        self.ut_beta = getattr(self.conf.model, "ut_beta", 2.0)
+        self.ut_kappa = getattr(self.conf.model, "ut_kappa", 0.0)
         self.positions_gradient_norm = None
 
         self.device = "cuda"
@@ -519,6 +533,16 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
                 momentum=self.conf.optimizer.momentum,
             )
             logger.info("🔆 Using SGHMC optimizer")
+        elif self.conf.optimizer.type == "fisher_sgd":
+            self.optimizer = FisherSGD(
+                params,
+                lr=self.conf.optimizer.lr,
+                momentum=self.conf.optimizer.momentum,
+                damping=self.conf.optimizer.damping,
+                alpha=self.conf.optimizer.fisher_alpha,
+            )
+            logger.info("🔆 Using Fisher preconditioned SGD")
+
         else:
             raise ValueError(f"Unknown optimizer type: {self.conf.optimizer.type}")
 
