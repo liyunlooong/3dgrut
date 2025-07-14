@@ -90,7 +90,7 @@ class MCMCStrategy(BaseStrategy):
 
     @torch.no_grad()
     def relocate_gaussians(self) -> None:
-        # Get the per Gaussian densities and scales (after sigmoid)
+        # Get the per-Gaussian densities and scales after applying the activation
         densities = self.model.get_density()
         # Find the dead indices
         dead_idxs = torch.where(densities <= self.conf.strategy.opacity_threshold)[0]
@@ -159,7 +159,13 @@ class MCMCStrategy(BaseStrategy):
             return 1 / (1 + torch.exp(-k * (x - x0)))
 
         # Current positional learning rate multiplied by the config paramater scale
-        noise = torch.randn_like(positions) * (op_sigmoid(1 - densities)) * self.conf.strategy.perturb.noise_lr * current_lr
+        norm_densities = (densities + 1.0) / 2.0
+        noise = (
+            torch.randn_like(positions)
+            * op_sigmoid(1 - norm_densities)
+            * self.conf.strategy.perturb.noise_lr
+            * current_lr
+        )
         noise = torch.bmm(covariance, noise.unsqueeze(-1)).squeeze(-1)
 
         self.model.positions.add_(noise)
@@ -173,7 +179,8 @@ class MCMCStrategy(BaseStrategy):
         if valid_indices is None:
             valid_indices = torch.arange(0, int(densities.shape[0]), device=densities.device, dtype=torch.int32)
 
-        probabilities = densities[valid_indices].flatten()  # ensure its shape is [N,]
+        norm_densities = (densities + 1.0) / 2.0
+        probabilities = norm_densities[valid_indices].flatten()  # ensure its shape is [N,]
 
         # Sample the locations to which the dead Gaussians will be moved proportional to the opacity of the alive Gaussians
         sampled_idxs = _multinomial_sample(probabilities, num_gaussians, replacement=True)
@@ -182,15 +189,20 @@ class MCMCStrategy(BaseStrategy):
         ratios = (torch.bincount(sampled_idxs)[sampled_idxs] + 1).clamp_(min=1, max=self.conf.strategy.binom_n_max).int()
 
         new_densities, new_scales = _mcmc_plugin.compute_relocation_tensor(
-            densities[sampled_idxs].contiguous(),
+            norm_densities[sampled_idxs].contiguous(),
             scales[sampled_idxs].contiguous(),
             ratios.contiguous(),
             self.binoms,
             self.conf.strategy.binom_n_max,
         )
 
+        new_densities = new_densities * 2.0 - 1.0
         new_densities = self.model.density_activation_inv(
-            torch.clamp(new_densities, max=1.0 - torch.finfo(torch.float32).eps, min=self.conf.strategy.opacity_threshold)
+            torch.clamp(
+                new_densities,
+                max=1.0 - torch.finfo(torch.float32).eps,
+                min=-1.0 + torch.finfo(torch.float32).eps,
+            )
         )
 
         new_scales = self.model.scale_activation_inv(new_scales)

@@ -142,7 +142,7 @@ python train.py --config-name apps/scannetpp_3dgrt.yaml path=data/scannetpp/0a5c
 python train.py --config-name apps/scannetpp_3dgut.yaml path=data/scannetpp/0a5c013435/dslr out_dir=runs experiment_name=0a5c013435_3dgut
 ```
 
-We also support MCMC densification strategy and selective Adam optimizer for 3DGRT and 3DGUT. 
+We also support the MCMC densification strategy and Selective Adam optimizer. SGHMC includes a lightweight Fisher-style preconditioning and can optionally leverage the Unscented Transform for the parameters.
 
 To enable MCMC, use:
 ```bash
@@ -154,6 +154,15 @@ To enable selective Adam, use:
 ```bash
 python train.py --config-name apps/colmap_3dgrt.yaml path=data/mipnerf360/bonsai out_dir=runs experiment_name=bonsai_3dgrt dataset.downsample_factor=2 optimizer.type=selective_adam
 python train.py --config-name apps/colmap_3dgut.yaml path=data/mipnerf360/bonsai out_dir=runs experiment_name=bonsai_3dgut dataset.downsample_factor=2 optimizer.type=selective_adam
+```
+To enable SGHMC, use:
+```bash
+python train.py --config-name apps/colmap_3dgrt.yaml path=data/mipnerf360/bonsai out_dir=runs experiment_name=bonsai_3dgrt dataset.downsample_factor=2 optimizer.type=sghmc
+python train.py --config-name apps/colmap_3dgut.yaml path=data/mipnerf360/bonsai out_dir=runs experiment_name=bonsai_3dgut dataset.downsample_factor=2 optimizer.type=sghmc
+```
+To enable the Unscented Transform-based parameter dynamics, set:
+```bash
+python train.py --config-name apps/colmap_3dgut.yaml path=data/mipnerf360/bonsai out_dir=runs experiment_name=bonsai_3dgut dataset.downsample_factor=2 model.use_unscented_transform=true
 ```
 
 If you use MCMC and Selective Adam in your research, please cite [3dgs-mcmc](https://github.com/ubc-vision/3dgs-mcmc), [taming-3dgs](https://github.com/humansensinglab/taming-3dgs),

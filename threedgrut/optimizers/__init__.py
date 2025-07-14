@@ -24,6 +24,7 @@
 
 
 import torch
+import math
 
 
 _optimizer_plugin = None
@@ -129,3 +130,59 @@ class SelectiveAdam(torch.optim.Adam):
                 beta2,
                 eps,
             )
+
+
+class SGHMC(torch.optim.Optimizer):
+    """Simplified SGHMC optimizer with optional Fisher preconditioning."""
+
+    def __init__(
+        self,
+        params,
+        lr: float = 1e-3,
+        momentum: float = 0.9,
+        weight_decay: float = 0.0,
+        damping: float = 1e-5,
+        fisher_alpha: float = 0.95,
+    ):
+        defaults = dict(
+            lr=lr,
+            momentum=momentum,
+            weight_decay=weight_decay,
+            damping=damping,
+            fisher_alpha=fisher_alpha,
+        )
+        super().__init__(params, defaults)
+
+    @torch.no_grad()
+    def step(self, closure=None):
+        for group in self.param_groups:
+            lr = group["lr"]
+            momentum = group["momentum"]
+            weight_decay = group["weight_decay"]
+            damping = group["damping"]
+            alpha = group["fisher_alpha"]
+            noise_std = math.sqrt(2.0 * lr * (1 - momentum))
+
+            for p in group["params"]:
+                if p.grad is None:
+                    continue
+                grad = p.grad
+                if weight_decay != 0:
+                    grad = grad.add(p, alpha=weight_decay)
+
+                state = self.state.setdefault(p, {})
+                if "momentum_buffer" not in state:
+                    state["momentum_buffer"] = torch.zeros_like(p)
+                if "fisher" not in state:
+                    state["fisher"] = torch.zeros_like(p)
+
+                state["fisher"].mul_(alpha).addcmul_(grad, grad, value=1 - alpha)
+                precond = grad / (state["fisher"].sqrt() + damping)
+
+                buf = state["momentum_buffer"]
+                buf.mul_(momentum).add_(precond).add_(torch.randn_like(p) * noise_std)
+                p.add_(buf, alpha=-lr)
+
+        return None
+
+
