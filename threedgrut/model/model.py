@@ -42,6 +42,7 @@ from threedgrut.utils.misc import (
 from threedgrut.utils.render import RGB2SH
 from threedgrut.optimizers import SelectiveAdam, SGHMC
 
+
 class MixtureOfGaussians(torch.nn.Module, ExportableModel):
     """ """
 
@@ -534,6 +535,7 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
                 fisher_alpha=self.conf.optimizer.fisher_alpha,
             )
             logger.info("🔆 Using SGHMC optimizer")
+
         else:
             raise ValueError(f"Unknown optimizer type: {self.conf.optimizer.type}")
 

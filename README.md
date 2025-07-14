@@ -144,6 +144,7 @@ python train.py --config-name apps/scannetpp_3dgut.yaml path=data/scannetpp/0a5c
 
 We also support the MCMC densification strategy and Selective Adam optimizer. SGHMC includes a lightweight Fisher-style preconditioning and can optionally leverage the Unscented Transform for the parameters.
 
+
 To enable MCMC, use:
 ```bash
 python train.py --config-name apps/colmap_3dgrt_mcmc.yaml path=data/mipnerf360/bonsai out_dir=runs experiment_name=bonsai_3dgrt dataset.downsample_factor=2 
@@ -160,10 +161,12 @@ To enable SGHMC, use:
 python train.py --config-name apps/colmap_3dgrt.yaml path=data/mipnerf360/bonsai out_dir=runs experiment_name=bonsai_3dgrt dataset.downsample_factor=2 optimizer.type=sghmc
 python train.py --config-name apps/colmap_3dgut.yaml path=data/mipnerf360/bonsai out_dir=runs experiment_name=bonsai_3dgut dataset.downsample_factor=2 optimizer.type=sghmc
 ```
+
 To enable the Unscented Transform-based parameter dynamics, set:
 ```bash
 python train.py --config-name apps/colmap_3dgut.yaml path=data/mipnerf360/bonsai out_dir=runs experiment_name=bonsai_3dgut dataset.downsample_factor=2 model.use_unscented_transform=true
 ```
+
 
 If you use MCMC and Selective Adam in your research, please cite [3dgs-mcmc](https://github.com/ubc-vision/3dgs-mcmc), [taming-3dgs](https://github.com/humansensinglab/taming-3dgs),
 and [gSplat](https://github.com/nerfstudio-project/gsplat/tree/main) library from which the code was adopted (links to the code are provided in the source files).

@@ -151,6 +151,7 @@ class SGHMC(torch.optim.Optimizer):
             damping=damping,
             fisher_alpha=fisher_alpha,
         )
+
         super().__init__(params, defaults)
 
     @torch.no_grad()
@@ -161,6 +162,7 @@ class SGHMC(torch.optim.Optimizer):
             weight_decay = group["weight_decay"]
             damping = group["damping"]
             alpha = group["fisher_alpha"]
+
             noise_std = math.sqrt(2.0 * lr * (1 - momentum))
 
             for p in group["params"]:
@@ -181,8 +183,8 @@ class SGHMC(torch.optim.Optimizer):
 
                 buf = state["momentum_buffer"]
                 buf.mul_(momentum).add_(precond).add_(torch.randn_like(p) * noise_std)
+
                 p.add_(buf, alpha=-lr)
 
         return None
-
 
