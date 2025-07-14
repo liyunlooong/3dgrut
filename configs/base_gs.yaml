@@ -51,7 +51,7 @@ export_usdz:
   apply_normalizing_transform: true
 
 model:
-  density_activation: sigmoid
+  density_activation: tanh
   scale_activation: exp
   default_density: 0.1
   default_scale_factor: 1.0
@@ -62,6 +62,10 @@ model:
   optimize_rotation: true
   optimize_scale: true
   bvh_update_frequency: 1
+  use_unscented_transform: false
+  ut_alpha: 1.0
+  ut_beta: 2.0
+  ut_kappa: 0.0
   progressive_training:
     feature_type: "sh" # one of [sh, mlp], currently only sh supported
     init_n_features: 0 # sh: initial sh deg | mlp: num of dims initially unmasked
@@ -79,9 +83,12 @@ checkpoint:
   iterations: ${int_list:[ 7000, 30000 ]}
 
 optimizer:
-  type: adam # We only support adam and selective_adam for now
+  type: adam # Supported types: [adam, selective_adam, sghmc, fisher_sgd]
   lr: 0.0
   eps: 1.e-15
+  momentum: 0.9
+  damping: 1.e-5
+  fisher_alpha: 0.95
   params:
     positions:
       lr: 0.00016 # 3DGS value: 0.00016 initial and decayed to 0.0000016

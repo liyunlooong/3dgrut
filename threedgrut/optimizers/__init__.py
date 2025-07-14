@@ -24,6 +24,7 @@
 
 
 import torch
+import math
 
 
 _optimizer_plugin = None
@@ -129,3 +130,68 @@ class SelectiveAdam(torch.optim.Adam):
                 beta2,
                 eps,
             )
+
+
+class SGHMC(torch.optim.Optimizer):
+    """Simplified SGHMC optimizer."""
+
+    def __init__(self, params, lr=1e-3, momentum=0.9, weight_decay=0.0):
+        defaults = dict(lr=lr, momentum=momentum, weight_decay=weight_decay)
+        super().__init__(params, defaults)
+
+    @torch.no_grad()
+    def step(self, closure=None):
+        for group in self.param_groups:
+            lr = group["lr"]
+            momentum = group["momentum"]
+            weight_decay = group["weight_decay"]
+            noise_std = math.sqrt(2.0 * lr * (1 - momentum))
+
+            for p in group["params"]:
+                if p.grad is None:
+                    continue
+                grad = p.grad
+                if weight_decay != 0:
+                    grad = grad.add(p, alpha=weight_decay)
+
+                state = self.state.setdefault(p, {})
+                if "momentum_buffer" not in state:
+                    state["momentum_buffer"] = torch.zeros_like(p)
+
+                buf = state["momentum_buffer"]
+                buf.mul_(momentum).add_(grad).add_(torch.randn_like(p) * noise_std)
+                p.add_(buf, alpha=-lr)
+
+        return None
+
+
+class FisherSGD(torch.optim.Optimizer):
+    """SGD with a running Fisher information preconditioner."""
+
+    def __init__(self, params, lr=1e-3, momentum=0.0, damping=1e-5, alpha=0.95):
+        defaults = dict(lr=lr, momentum=momentum, damping=damping, alpha=alpha)
+        super().__init__(params, defaults)
+
+    @torch.no_grad()
+    def step(self, closure=None):
+        for group in self.param_groups:
+            lr = group["lr"]
+            momentum = group["momentum"]
+            damping = group["damping"]
+            alpha = group["alpha"]
+
+            for p in group["params"]:
+                if p.grad is None:
+                    continue
+                grad = p.grad
+                state = self.state.setdefault(p, {})
+                if "fisher" not in state:
+                    state["fisher"] = torch.zeros_like(p)
+                    state["momentum_buffer"] = torch.zeros_like(p)
+                state["fisher"].mul_(alpha).addcmul_(grad, grad, value=1 - alpha)
+                precond = grad / (state["fisher"].sqrt() + damping)
+                buf = state["momentum_buffer"]
+                buf.mul_(momentum).add_(precond)
+                p.add_(buf, alpha=-lr)
+
+        return None
