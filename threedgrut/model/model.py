@@ -587,6 +587,30 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         for name, value in optimizable_tensors.items():
             setattr(self, name, value)
 
+    def replace_tensor_to_optimizer(self, new_tensor: torch.Tensor, name: str) -> dict[str, torch.Tensor]:
+        """Replace a tensor parameter without breaking the optimizer state.
+
+        This helper updates the data of the specified parameter in-place and
+        returns a mapping containing the updated ``torch.nn.Parameter`` object.
+
+        Args:
+            new_tensor: The tensor with the updated values.
+            name: Name of the parameter attribute to replace.
+
+        Returns:
+            Dictionary mapping the parameter name to the updated parameter.
+        """
+        param = getattr(self, name)
+        if not isinstance(param, torch.nn.Parameter):
+            raise AttributeError(f"{name} is not an optimizable parameter")
+        if param.shape != new_tensor.shape:
+            raise ValueError(
+                f"New tensor for {name} has shape {new_tensor.shape}, expected {param.shape}"
+            )
+        with torch.no_grad():
+            param.data.copy_(new_tensor.detach())
+        return {name: param}
+
     def increase_num_active_features(self) -> None:
         self.n_active_features = min(self.max_n_features, self.n_active_features + self.feature_dim_increase_step)
 
