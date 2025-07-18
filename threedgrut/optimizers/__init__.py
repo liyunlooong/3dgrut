@@ -155,7 +155,7 @@ class SGHMC(torch.optim.Optimizer):
         super().__init__(params, defaults)
 
     @torch.no_grad()
-    def step(self, closure=None):
+    def step(self, visibility=None, noise_scale: float = 1.0, closure=None):
         for group in self.param_groups:
             lr = group["lr"]
             momentum = group["momentum"]
@@ -163,12 +163,15 @@ class SGHMC(torch.optim.Optimizer):
             damping = group["damping"]
             alpha = group["fisher_alpha"]
 
-            noise_std = math.sqrt(2.0 * lr * (1 - momentum))
+            noise_std = math.sqrt(2.0 * lr * (1 - momentum)) * noise_scale
 
             for p in group["params"]:
                 if p.grad is None:
                     continue
                 grad = p.grad
+                if visibility is not None:
+                    view = visibility.view(-1, *([1] * (grad.dim() - 1)))
+                    grad = grad * view
                 if weight_decay != 0:
                     grad = grad.add(p, alpha=weight_decay)
 
@@ -182,7 +185,12 @@ class SGHMC(torch.optim.Optimizer):
                 precond = grad / (state["fisher"].sqrt() + damping)
 
                 buf = state["momentum_buffer"]
-                buf.mul_(momentum).add_(precond).add_(torch.randn_like(p) * noise_std)
+                if visibility is not None:
+                    view = visibility.view(-1, *([1] * (buf.dim() - 1)))
+                    noise = torch.randn_like(p) * noise_std
+                    buf.mul_(momentum).add_(precond * view).add_(noise * view)
+                else:
+                    buf.mul_(momentum).add_(precond).add_(torch.randn_like(p) * noise_std)
 
                 p.add_(buf, alpha=-lr)
 
