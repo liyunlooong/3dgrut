@@ -11,7 +11,7 @@ out_dir: "./runs"
 n_iterations: 30000
 with_gui: false
 gui_update_from_device: true
-val_frequency: 5000
+val_frequency: 2000
 num_workers: 24
 use_wandb: false
 wandb_project: "3dgrt"
@@ -87,23 +87,23 @@ optimizer:
 
   lr: 0.0
   eps: 1.e-15
-  momentum: 0.9
+  momentum: 0.7
   damping: 1.e-5
   fisher_alpha: 0.95
 
   params:
     positions:
-      lr: 0.00016 # 3DGS value: 0.00016 initial and decayed to 0.0000016
+      lr: 0.00008 # Reduced learning rate
     density:
-      lr: 0.05 # 3DGS value: 0.05
+      lr: 0.025 # Reduced learning rate
     features_albedo:
-      lr: 0.0025 # 3DGS value: 0.0025
+      lr: 0.00125 # Reduced learning rate
     features_specular:
       lr: ${div:${optimizer.params.features_albedo.lr},20} # 3DGS value 20x smaller than lr of features_albedo
     rotation:
-      lr: 0.001 # 3DGS value: 0.001
+      lr: 0.0005 # Reduced learning rate
     scale:
-      lr: 0.005 # 3DGS value: 0.005
+      lr: 0.0025 # Reduced learning rate
 
 scheduler:
   positions:

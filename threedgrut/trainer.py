@@ -44,7 +44,7 @@ from threedgrut.utils.gui import GUI
 from threedgrut.utils.logger import logger
 from threedgrut.utils.timer import CudaTimer
 from threedgrut.utils.misc import jet_map, create_summary_writer, check_step_condition
-from threedgrut.optimizers import SelectiveAdam
+from threedgrut.optimizers import SelectiveAdam, SGHMC
 
 class Trainer3DGRUT:
     """Trainer for paper: "3D Gaussian Ray Tracing: Fast Tracing of Particle Scenes" """
@@ -742,6 +742,10 @@ class Trainer3DGRUT:
                 if isinstance(model.optimizer, SelectiveAdam):
                     assert outputs['mog_visibility'].shape == model.density.shape, f"Visibility shape {outputs['mog_visibility'].shape} does not match density shape {model.density.shape}"
                     model.optimizer.step(outputs['mog_visibility'])
+                elif isinstance(model.optimizer, SGHMC):
+                    assert outputs['mog_visibility'].shape == model.density.shape, f"Visibility shape {outputs['mog_visibility'].shape} does not match density shape {model.density.shape}"
+                    cooling = max(0.0, 1.0 - global_step / conf.n_iterations)
+                    model.optimizer.step(outputs['mog_visibility'], cooling)
                 else:
                     model.optimizer.step()
                 model.optimizer.zero_grad()
