@@ -223,7 +223,35 @@ class GSStrategy(BaseStrategy):
         cam_normals = torch.from_numpy(dataset.poses[:, :3, 2]).to(self.model.device)
         similarities = torch.matmul(self.model.positions, cam_normals.T)
         cam_dists = similarities.min(dim=1)[0].clamp(min=1e-8)
-        ratio = self.model.get_scale().min(dim=1)[0] / cam_dists * dataset.intrinsic[0].max()
+
+        # Estimate a representative focal length for scale comparison. Some
+        # datasets expose a single list of intrinsics while others maintain a
+        # dictionary keyed by camera id.  The previous implementation expected
+        # an attribute named ``intrinsic`` which no dataset actually provides,
+        # leading to an ``AttributeError``.  Here we robustly query the available
+        # intrinsics information and fall back to the image resolution if none is
+        # found.
+        focal_length = None
+        if hasattr(dataset, "intrinsic"):
+            intr = getattr(dataset, "intrinsic")
+            if isinstance(intr, (list, tuple)) and len(intr) >= 2:
+                focal_length = max(intr[0], intr[1])
+            elif hasattr(intr, "max"):
+                focal_length = float(intr.max())
+        elif hasattr(dataset, "intrinsics"):
+            intr = getattr(dataset, "intrinsics")
+            if isinstance(intr, dict) and len(intr) > 0:
+                first = next(iter(intr.values()))
+                params = first[0]
+                if isinstance(params, dict) and "focal_length" in params:
+                    fl = params["focal_length"]
+                    focal_length = float(torch.tensor(fl).max())
+            elif isinstance(intr, (list, tuple)) and len(intr) >= 2:
+                focal_length = max(intr[0], intr[1])
+        if focal_length is None:
+            focal_length = float(max(getattr(dataset, "image_w", 1), getattr(dataset, "image_h", 1)))
+
+        ratio = self.model.get_scale().min(dim=1)[0] / cam_dists * focal_length
 
         # Prune the Gaussians based on their weight
         mask = ratio >= self.conf.strategy.prune_scale.threshold

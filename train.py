@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import subprocess
 import hydra
 import torch
@@ -55,6 +56,8 @@ def main(conf: DictConfig) -> None:
     if world_size > torch.cuda.device_count():
         world_size = torch.cuda.device_count()
     if world_size > 1:
+        os.environ.setdefault("MASTER_ADDR", "127.0.0.1")
+        os.environ.setdefault("MASTER_PORT", "29500")
         mp.spawn(_run, args=(world_size, conf), nprocs=world_size)
     else:
         _run(0, 1, conf)
