@@ -143,7 +143,7 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
 
         return model_params
 
-    def __init__(self, conf, scene_extent=None):
+    def __init__(self, conf, scene_extent=None, device="cuda"):
         super().__init__()
 
         sh_degree = conf.model.progressive_training.max_n_features
@@ -172,7 +172,7 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
         self.ut_kappa = getattr(self.conf.model, "ut_kappa", 0.0)
         self.positions_gradient_norm = None
 
-        self.device = "cuda"
+        self.device = device
         self.optimizer = None
         self.density_activation = get_activation_function(self.conf.model.density_activation)
         self.density_activation_inv = get_activation_function(self.conf.model.density_activation, inverse=True)
@@ -199,6 +199,8 @@ class MixtureOfGaussians(torch.nn.Module, ExportableModel):
             self.renderer = threedgut_tracer.Tracer(conf)
         else:
             raise ValueError(f"Unknown rendering method: {conf.render.method}")
+
+        self.to(self.device)
 
     @torch.no_grad()
     def build_acc(self, rebuild=True):

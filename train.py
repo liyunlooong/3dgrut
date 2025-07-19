@@ -15,6 +15,9 @@
 
 import subprocess
 import hydra
+import torch
+import torch.multiprocessing as mp
+import torch.distributed as dist
 from omegaconf import DictConfig, OmegaConf
 from threedgrut.utils.logger import logger
 from threedgrut.utils.timer import timing_options
@@ -33,20 +36,28 @@ def get_git_revision_hash() -> str:
         return "Unknown"
 
 
+def _run(rank: int, world_size: int, conf: DictConfig) -> None:
+    if world_size > 1:
+        dist.init_process_group("nccl", rank=rank, world_size=world_size)
+    torch.cuda.set_device(rank)
+    from threedgrut.trainer import Trainer3DGRUT
+    trainer = Trainer3DGRUT(conf, device=torch.device(f"cuda:{rank}"))
+    trainer.run_training()
+    if world_size > 1:
+        dist.destroy_process_group()
+
+
 @hydra.main(config_path="configs", version_base=None)
 def main(conf: DictConfig) -> None:
     logger.info(f"Git hash: {get_git_revision_hash()}")
     logger.info(f"Compiling native code..")
-    from threedgrut.trainer import Trainer3DGRUT
-
-    # # NOTE: It is also possible to directly instantiate a trainer from a checkpoint/INGP/PLY file
-    # c = OmegaConf.load("example.yaml")
-    # trainer = Trainer3DGRUT.create_from_ckpt("checkpoint.pt", DictConfig(c))
-    # trainer = Trainer3DGRUT.create_from_ingp("export_last.ingp", DictConfig(c))
-    # trainer = Trainer3DGRUT.create_from_ply("export_last.ply", DictConfig(c))
-
-    trainer = Trainer3DGRUT(conf)
-    trainer.run_training()
+    world_size = getattr(conf, "world_size", 1)
+    if world_size > torch.cuda.device_count():
+        world_size = torch.cuda.device_count()
+    if world_size > 1:
+        mp.spawn(_run, args=(world_size, conf), nprocs=world_size)
+    else:
+        _run(0, 1, conf)
 
 
 if __name__ == "__main__":

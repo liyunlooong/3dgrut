@@ -13,6 +13,7 @@ with_gui: false
 gui_update_from_device: true
 val_frequency: 2000
 num_workers: 24
+world_size: 1
 use_wandb: false
 wandb_project: "3dgrt"
 test_last: true
