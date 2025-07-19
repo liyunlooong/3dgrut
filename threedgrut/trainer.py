@@ -22,6 +22,7 @@ import numpy as np
 
 import torch
 import torch.utils.data
+import torch.distributed as dist
 
 from addict import Dict
 from omegaconf import DictConfig, OmegaConf
@@ -44,6 +45,7 @@ from threedgrut.utils.gui import GUI
 from threedgrut.utils.logger import logger
 from threedgrut.utils.timer import CudaTimer
 from threedgrut.utils.misc import jet_map, create_summary_writer, check_step_condition
+from threedgrut.utils.dist import is_main_process
 from threedgrut.optimizers import SelectiveAdam, SGHMC
 
 class Trainer3DGRUT:
@@ -114,6 +116,7 @@ class Trainer3DGRUT:
         """ Global configuration of model, scene, optimization, etc"""
         self.device = device if device is not None else DEFAULT_DEVICE
         """ Device used for training and visualizations """
+        self.rank = dist.get_rank() if dist.is_available() and dist.is_initialized() else 0
         self.global_step = 0
         """ Current global iteration of the trainer """
         self.n_iterations = conf.n_iterations
@@ -137,23 +140,36 @@ class Trainer3DGRUT:
         self.init_gui(conf, self.model, self.train_dataset, self.val_dataset, self.scene_bbox)
 
     def init_dataloaders(self, conf: DictConfig):
-        train_dataset, val_dataset = datasets.make(name=conf.dataset.type, config=conf, ray_jitter=None)
+        train_dataset, val_dataset = datasets.make(
+            name=conf.dataset.type, config=conf, ray_jitter=None, device=str(self.device)
+        )
+
+        if dist.is_available() and dist.is_initialized():
+            train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset, shuffle=True)
+            val_sampler = torch.utils.data.distributed.DistributedSampler(val_dataset, shuffle=False)
+        else:
+            train_sampler = None
+            val_sampler = None
+
         train_dataloader = MultiEpochsDataLoader(
             train_dataset,
+            sampler=train_sampler,
             num_workers=conf.num_workers,
             batch_size=1,
-            shuffle=True,
+            shuffle=(train_sampler is None),
             pin_memory=True,
             persistent_workers=True if conf.num_workers > 0 else False,
         )
         val_dataloader = torch.utils.data.DataLoader(
             val_dataset,
+            sampler=val_sampler,
             num_workers=conf.num_workers,
             batch_size=1,
             shuffle=False,
             pin_memory=True,
             persistent_workers=True if conf.num_workers > 0 else False,
         )
+        self.train_sampler = train_sampler if train_sampler is not None else None
         self.train_dataset = train_dataset
         self.train_dataloader = train_dataloader
         self.val_dataset = val_dataset
@@ -178,7 +194,13 @@ class Trainer3DGRUT:
 
     def init_model(self, conf: DictConfig, scene_extent=None) -> None:
         """Initializes the gaussian model and the optix context"""
-        self.model = MixtureOfGaussians(conf, scene_extent=scene_extent)
+        self.model = MixtureOfGaussians(conf, scene_extent=scene_extent, device=str(self.device))
+        if dist.is_available() and dist.is_initialized():
+            self.model = torch.nn.parallel.DistributedDataParallel(
+                self.model,
+                device_ids=[self.device.index] if self.device.index is not None else None,
+                output_device=self.device.index if self.device.index is not None else None,
+            )
 
     def init_densification_and_pruning_strategy(self, conf: DictConfig) -> None:
         """Set pre-train / post-train iteration logic. i.e. densification and pruning"""
@@ -294,14 +316,17 @@ class Trainer3DGRUT:
     def init_experiments_tracking(self, conf: DictConfig):
         # Initialize the tensorboard writer
         object_name = Path(conf.path).stem
-        writer, out_dir, run_name = create_summary_writer(
-            conf, object_name, conf.out_dir, conf.experiment_name, conf.use_wandb
-        )
-        logger.info(f"📊 Training logs & will be saved to: {out_dir}")
+        if is_main_process():
+            writer, out_dir, run_name = create_summary_writer(
+                conf, object_name, conf.out_dir, conf.experiment_name, conf.use_wandb
+            )
+            logger.info(f"📊 Training logs & will be saved to: {out_dir}")
 
-        # Store parsed config for reference
-        with open(os.path.join(out_dir, "parsed.yaml"), "w") as fp:
-            OmegaConf.save(config=conf, f=fp)
+            # Store parsed config for reference
+            with open(os.path.join(out_dir, "parsed.yaml"), "w") as fp:
+                OmegaConf.save(config=conf, f=fp)
+        else:
+            writer, out_dir, run_name = None, os.path.join(conf.out_dir, conf.experiment_name), ""
 
         # Pack all components used to track progress of training
         self.tracking = Dict(writer=writer, run_name=run_name, object_name=object_name, output_dir=out_dir)
@@ -475,49 +500,53 @@ class Trainer3DGRUT:
         """
         writer = self.tracking.writer
         global_step = self.global_step
-
-        if "img_pred" in metrics:
-            writer.add_images("image/pred/val", torch.stack(metrics["img_pred"]), global_step, dataformats="NHWC")
-        if "img_gt" in metrics:
-            writer.add_images("image/gt", torch.stack(metrics["img_gt"]), global_step, dataformats="NHWC")
-        if "img_hit_counts" in metrics:
-            writer.add_images(
-                "image/hit_counts/val", torch.stack(metrics["img_hit_counts"]), global_step, dataformats="NHWC"
-            )
-        if "img_pred_dist" in metrics:
-            writer.add_images("image/dist/val", torch.stack(metrics["img_pred_dist"]), global_step, dataformats="NHWC")
-        if "img_pred_opacity" in metrics:
-            writer.add_images(
-                "image/opacity/val", torch.stack(metrics["img_pred_opacity"]), global_step, dataformats="NHWC"
-            )
+        if writer is not None:
+            if "img_pred" in metrics:
+                writer.add_images("image/pred/val", torch.stack(metrics["img_pred"]), global_step, dataformats="NHWC")
+            if "img_gt" in metrics:
+                writer.add_images("image/gt", torch.stack(metrics["img_gt"]), global_step, dataformats="NHWC")
+            if "img_hit_counts" in metrics:
+                writer.add_images(
+                    "image/hit_counts/val", torch.stack(metrics["img_hit_counts"]), global_step, dataformats="NHWC"
+                )
+            if "img_pred_dist" in metrics:
+                writer.add_images("image/dist/val", torch.stack(metrics["img_pred_dist"]), global_step, dataformats="NHWC")
+            if "img_pred_opacity" in metrics:
+                writer.add_images(
+                    "image/opacity/val", torch.stack(metrics["img_pred_opacity"]), global_step, dataformats="NHWC"
+                )
 
         mean_timings = {}
         if "timings" in metrics:
             for time_key in metrics["timings"]:
                 mean_timings[time_key] = np.mean(metrics["timings"][time_key])
-                writer.add_scalar("time/" + time_key + "/val", mean_timings[time_key], global_step)
+                if writer is not None:
+                    writer.add_scalar("time/" + time_key + "/val", mean_timings[time_key], global_step)
 
-        writer.add_scalar("num_particles/val", self.model.num_gaussians, self.global_step)
+        if writer is not None:
+            writer.add_scalar("num_particles/val", self.model.num_gaussians, self.global_step)
 
         mean_psnr = np.mean(metrics["psnr"])
-        writer.add_scalar("psnr/val", mean_psnr, global_step)
-        writer.add_scalar("ssim/val", np.mean(metrics["ssim"]), global_step)
-        writer.add_scalar("lpips/val", np.mean(metrics["lpips"]), global_step)
-        writer.add_scalar("hits/min/val", np.mean(metrics["hits_min"]), global_step)
-        writer.add_scalar("hits/max/val", np.mean(metrics["hits_max"]), global_step)
-        writer.add_scalar("hits/mean/val", np.mean(metrics["hits_mean"]), global_step)
+        if writer is not None:
+            writer.add_scalar("psnr/val", mean_psnr, global_step)
+            writer.add_scalar("ssim/val", np.mean(metrics["ssim"]), global_step)
+            writer.add_scalar("lpips/val", np.mean(metrics["lpips"]), global_step)
+            writer.add_scalar("hits/min/val", np.mean(metrics["hits_min"]), global_step)
+            writer.add_scalar("hits/max/val", np.mean(metrics["hits_max"]), global_step)
+            writer.add_scalar("hits/mean/val", np.mean(metrics["hits_mean"]), global_step)
 
         loss = np.mean(metrics["losses"]["total_loss"])
-        writer.add_scalar("loss/total/val", loss, global_step)
-        if self.conf.loss.use_l1:
-            l1_loss = np.mean(metrics["losses"]["l1_loss"])
-            writer.add_scalar("loss/l1/val", l1_loss, global_step)
-        if self.conf.loss.use_l2:
-            l2_loss = np.mean(metrics["losses"]["l2_loss"])
-            writer.add_scalar("loss/l2/val", l2_loss, global_step)
-        if self.conf.loss.use_ssim:
-            ssim_loss = np.mean(metrics["losses"]["ssim_loss"])
-            writer.add_scalar("loss/ssim/val", ssim_loss, global_step)
+        if writer is not None:
+            writer.add_scalar("loss/total/val", loss, global_step)
+            if self.conf.loss.use_l1:
+                l1_loss = np.mean(metrics["losses"]["l1_loss"])
+                writer.add_scalar("loss/l1/val", l1_loss, global_step)
+            if self.conf.loss.use_l2:
+                l2_loss = np.mean(metrics["losses"]["l2_loss"])
+                writer.add_scalar("loss/l2/val", l2_loss, global_step)
+            if self.conf.loss.use_ssim:
+                ssim_loss = np.mean(metrics["losses"]["ssim_loss"])
+                writer.add_scalar("loss/ssim/val", ssim_loss, global_step)
 
         table = {k: np.mean(v) for k, v in metrics.items() if k in ("psnr", "ssim", "lpips")}
         for time_key in mean_timings:
@@ -544,45 +573,58 @@ class Trainer3DGRUT:
 
         if self.conf.enable_writer and global_step > 0 and global_step % self.conf.log_frequency == 0:
             loss = np.mean(batch_metrics["losses"]["total_loss"])
-            writer.add_scalar("loss/total/train", loss, global_step)
+            if writer is not None:
+                writer.add_scalar("loss/total/train", loss, global_step)
             if self.conf.loss.use_l1:
                 l1_loss = np.mean(batch_metrics["losses"]["l1_loss"])
-                writer.add_scalar("loss/l1/train", l1_loss, global_step)
+                if writer is not None:
+                    writer.add_scalar("loss/l1/train", l1_loss, global_step)
             if self.conf.loss.use_l2:
                 l2_loss = np.mean(batch_metrics["losses"]["l2_loss"])
-                writer.add_scalar("loss/l2/train", l2_loss, global_step)
+                if writer is not None:
+                    writer.add_scalar("loss/l2/train", l2_loss, global_step)
             if self.conf.loss.use_ssim:
                 ssim_loss = np.mean(batch_metrics["losses"]["ssim_loss"])
-                writer.add_scalar("loss/ssim/train", ssim_loss, global_step)
+                if writer is not None:
+                    writer.add_scalar("loss/ssim/train", ssim_loss, global_step)
             if self.conf.loss.use_opacity:
                 opacity_loss = np.mean(batch_metrics["losses"]["opacity_loss"])
-                writer.add_scalar("loss/opacity/train", opacity_loss, global_step)
+                if writer is not None:
+                    writer.add_scalar("loss/opacity/train", opacity_loss, global_step)
             if self.conf.loss.use_scale:
                 scale_loss = np.mean(batch_metrics["losses"]["scale_loss"])
-                writer.add_scalar("loss/scale/train", scale_loss, global_step)
+                if writer is not None:
+                    writer.add_scalar("loss/scale/train", scale_loss, global_step)
             if "psnr" in batch_metrics:
-                writer.add_scalar("psnr/train", batch_metrics["psnr"], self.global_step)
+                if writer is not None:
+                    writer.add_scalar("psnr/train", batch_metrics["psnr"], self.global_step)
             if "ssim" in batch_metrics:
-                writer.add_scalar("ssim/train", batch_metrics["ssim"], self.global_step)
+                if writer is not None:
+                    writer.add_scalar("ssim/train", batch_metrics["ssim"], self.global_step)
             if "lpips" in batch_metrics:
-                writer.add_scalar("lpips/train", batch_metrics["lpips"], self.global_step)
+                if writer is not None:
+                    writer.add_scalar("lpips/train", batch_metrics["lpips"], self.global_step)
             if "hits_mean" in batch_metrics:
-                writer.add_scalar("hits/mean/train", batch_metrics["hits_mean"], self.global_step)
+                if writer is not None:
+                    writer.add_scalar("hits/mean/train", batch_metrics["hits_mean"], self.global_step)
             if "hits_std" in batch_metrics:
-                writer.add_scalar("hits/std/train", batch_metrics["hits_std"], self.global_step)
+                if writer is not None:
+                    writer.add_scalar("hits/std/train", batch_metrics["hits_std"], self.global_step)
             if "hits_min" in batch_metrics:
-                writer.add_scalar("hits/min/train", batch_metrics["hits_min"], self.global_step)
+                if writer is not None:
+                    writer.add_scalar("hits/min/train", batch_metrics["hits_min"], self.global_step)
             if "hits_max" in batch_metrics:
-                writer.add_scalar("hits/max/train", batch_metrics["hits_max"], self.global_step)
+                if writer is not None:
+                    writer.add_scalar("hits/max/train", batch_metrics["hits_max"], self.global_step)
 
-            if "timings" in batch_metrics:
+            if "timings" in batch_metrics and writer is not None:
                 for time_key in batch_metrics["timings"]:
                     writer.add_scalar(
                         "time/" + time_key + "/train", batch_metrics["timings"][time_key], self.global_step
                     )
-
-            writer.add_scalar("num_particles/train", self.model.num_gaussians, self.global_step)
-            writer.add_scalar("train/num_GS", self.model.num_gaussians, self.global_step)
+            if writer is not None:
+                writer.add_scalar("num_particles/train", self.model.num_gaussians, self.global_step)
+                writer.add_scalar("train/num_GS", self.model.num_gaussians, self.global_step)
 
             # # NOTE: hack to easily compare with 3DGS
             # writer.add_scalar("train_loss_patches/total_loss", loss, global_step)
@@ -632,16 +674,17 @@ class Trainer3DGRUT:
             self.save_checkpoint(last_checkpoint=True)
 
             # Renderer test split
-            renderer = Renderer.from_preloaded_model(
-                model=self.model,
-                out_dir=out_dir,
-                path=conf.path,
-                save_gt=False,
-                writer=self.tracking.writer,
-                global_step=self.global_step,
-                compute_extra_metrics=conf.compute_extra_metrics,
-            )
-            renderer.render_all()
+            if is_main_process():
+                renderer = Renderer.from_preloaded_model(
+                    model=self.model,
+                    out_dir=out_dir,
+                    path=conf.path,
+                    save_gt=False,
+                    writer=self.tracking.writer,
+                    global_step=self.global_step,
+                    compute_extra_metrics=conf.compute_extra_metrics,
+                )
+                renderer.render_all()
 
     @torch.cuda.nvtx.range(f"save_checkpoint")
     def save_checkpoint(self, last_checkpoint: bool = False):
@@ -650,6 +693,8 @@ class Trainer3DGRUT:
             last_checkpoint: If true, will update checkpoint title to 'last'.
                              Otherwise uses global step
         """
+        if not is_main_process():
+            return
         global_step = self.global_step
         out_dir = self.tracking.output_dir
         parameters = self.model.get_model_parameters()
@@ -870,6 +915,8 @@ class Trainer3DGRUT:
         logger.start_progress(task_name="Training", total_steps=conf.n_iterations, color="spring_green1")
 
         for epoch_idx in range(self.n_epochs):
+            if hasattr(self, "train_sampler") and self.train_sampler is not None:
+                self.train_sampler.set_epoch(epoch_idx)
             self.run_train_pass(conf)
 
         logger.end_progress(task_name="Training")

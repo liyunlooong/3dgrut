@@ -16,6 +16,8 @@
 import warnings
 from typing import Optional
 
+from .dist import is_main_process
+
 from rich.console import Console
 from rich.progress import BarColumn, Progress, ProgressColumn, TaskProgressColumn, TextColumn, TimeElapsedColumn
 from rich.text import Text
@@ -57,18 +59,28 @@ class RichLogger:
     finished_tasks = dict()
 
     def info(self, msg):
+        if not is_main_process():
+            return
         self.console.log(f"[INFO] {msg}", style="white")
 
     def warning(self, msg):
+        if not is_main_process():
+            return
         self.console.log(f"[WARNING] {msg}", style="bright_yellow")
 
     def error(self, msg):
+        if not is_main_process():
+            return
         self.console.log(f"[ERROR] {msg}", style="bright_red")
 
     def log_rule(self, text):
+        if not is_main_process():
+            return
         self.console.rule(text)
 
     def log_table(self, title: str, record: dict):
+        if not is_main_process():
+            return
         table = Table(title=title)
         for key in record.keys():
             table.add_column(key, justify="left", style="yellow3", no_wrap=True)
@@ -90,6 +102,8 @@ class RichLogger:
         return " ".join(additional_info)
 
     def start_progress(self, task_name, total_steps, color=None, **metrics):
+        if not is_main_process():
+            return
         additional_info = self._concat_additional_progress_info(**metrics)
         task_id = self.progress.add_task(f"[{color}]{task_name}", total=total_steps, additional_info=additional_info)
         # start progress if it's the first task
@@ -99,12 +113,16 @@ class RichLogger:
         self.progress_tasks[task_name] = dict(task_id=task_id, additional_info="")
 
     def log_progress(self, task_name, advance, **metrics):
+        if not is_main_process():
+            return
         additional_info = self._concat_additional_progress_info(**metrics)
         self.progress.update(
             self.progress_tasks[task_name]["task_id"], advance=advance, additional_info=additional_info
         )
 
     def end_progress(self, task_name):
+        if not is_main_process():
+            return
         task_id = self.progress_tasks[task_name]["task_id"]
         # log task time
         self.finished_tasks[task_name] = dict(name=task_name, elapsed=self.get_task(task_id).elapsed)
@@ -126,6 +144,9 @@ class RichLogger:
         color: str = None,
         transient: bool = False,
     ):
+        if not is_main_process():
+            yield from sequence
+            return
         if color is not None:
             desc_column = TextColumn(f"[{color}][progress.description]" + "{task.description}[default]")
         else:

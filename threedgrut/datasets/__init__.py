@@ -18,23 +18,26 @@ from .dataset_colmap import ColmapDataset
 from .dataset_scannetpp import ScannetppDataset
 
 
-def make(name: str, config, ray_jitter):
+def make(name: str, config, ray_jitter, device="cuda"):
     match name:
         case "nerf":
             train_dataset = NeRFDataset(
                 config.path,
+                device=device,
                 split="train",
                 bg_color=config.model.background.color,
                 ray_jitter=ray_jitter,
             )
             val_dataset = NeRFDataset(
                 config.path,
+                device=device,
                 split="val",
                 bg_color=config.model.background.color,
             )
         case "colmap":
             train_dataset = ColmapDataset(
                 config.path,
+                device=device,
                 split="train",
                 downsample_factor=config.dataset.downsample_factor,
                 test_split_interval=config.dataset.test_split_interval,
@@ -42,6 +45,7 @@ def make(name: str, config, ray_jitter):
             )
             val_dataset = ColmapDataset(
                 config.path,
+                device=device,
                 split="val",
                 downsample_factor=config.dataset.downsample_factor,
                 test_split_interval=config.dataset.test_split_interval,
@@ -49,6 +53,7 @@ def make(name: str, config, ray_jitter):
         case "scannetpp":
             train_dataset = ScannetppDataset(
                 config.path,
+                device=device,
                 split="train",
                 ray_jitter=ray_jitter,
                 downsample_factor=config.dataset.downsample_factor,
@@ -56,6 +61,7 @@ def make(name: str, config, ray_jitter):
             )
             val_dataset = ScannetppDataset(
                 config.path,
+                device=device,
                 split="val",
                 downsample_factor=config.dataset.downsample_factor,
                 test_split_interval=config.dataset.test_split_interval,
@@ -68,17 +74,19 @@ def make(name: str, config, ray_jitter):
     return train_dataset, val_dataset
 
 
-def make_test(name: str, config):
+def make_test(name: str, config, device="cuda"):
     match name:
         case "nerf":
             dataset = NeRFDataset(
                 config.path,
+                device=device,
                 split="test",
                 bg_color=config.model.background.color,
             )
         case "colmap":
             dataset = ColmapDataset(
                 config.path,
+                device=device,
                 split="val",
                 downsample_factor=config.dataset.downsample_factor,
                 test_split_interval=config.dataset.test_split_interval,
@@ -86,6 +94,7 @@ def make_test(name: str, config):
         case "scannetpp":
             dataset = ScannetppDataset(
                 config.path,
+                device=device,
                 split="val",
                 downsample_factor=config.dataset.downsample_factor,
                 test_split_interval=config.dataset.test_split_interval,
