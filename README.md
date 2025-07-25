@@ -167,6 +167,24 @@ To enable the Unscented Transform-based parameter dynamics, set:
 python train.py --config-name apps/colmap_3dgut.yaml path=data/mipnerf360/bonsai out_dir=runs experiment_name=bonsai_3dgut dataset.downsample_factor=2 model.use_unscented_transform=true
 ```
 
+To speed up the forward/backward pass with automatic mixed precision, set:
+```bash
+python train.py --config-name apps/colmap_3dgrt.yaml path=data/mipnerf360/bonsai out_dir=runs experiment_name=bonsai_fp16 enable_amp=true
+```
+
+### Hyperparameter search with Ray Tune
+
+We provide a small utility script leveraging [Ray Tune](https://docs.ray.io/en/latest/tune/index.html) to
+automatically explore the learning rate schedule using Population Based Training (PBT).
+
+```bash
+python ray_tune_train.py
+```
+
+The script spawns multiple trials in parallel, performs early stopping and
+dynamically perturbs the optimizer learning rates to seek improved
+performance over the defaults.
+
 
 If you use MCMC and Selective Adam in your research, please cite [3dgs-mcmc](https://github.com/ubc-vision/3dgs-mcmc), [taming-3dgs](https://github.com/humansensinglab/taming-3dgs),
 and [gSplat](https://github.com/nerfstudio-project/gsplat/tree/main) library from which the code was adopted (links to the code are provided in the source files).
