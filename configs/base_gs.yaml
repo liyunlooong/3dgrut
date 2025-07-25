@@ -23,6 +23,8 @@ compute_extra_metrics: true
 
 enable_frame_timings: false
 
+enable_amp: false
+
 enable_writer: true
 writer:
   hit_stat_frequency: 999999

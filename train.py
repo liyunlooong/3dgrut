@@ -42,7 +42,7 @@ def _run(rank: int, world_size: int, conf: DictConfig) -> None:
         dist.init_process_group("nccl", rank=rank, world_size=world_size)
     torch.cuda.set_device(rank)
     from threedgrut.trainer import Trainer3DGRUT
-    trainer = Trainer3DGRUT(conf, device=torch.device(f"cuda:{rank}"))
+    trainer = Trainer3DGRUT(conf, device=torch.device(f"cuda:{rank}"), report_hook=None)
     trainer.run_training()
     if world_size > 1:
         dist.destroy_process_group()
