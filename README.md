@@ -429,7 +429,10 @@ python llm_tuner.py configs/apps/colmap_3dgrt.yaml tuner_out \
 ```
 
 The tuner iteratively launches training rounds, updating the overrides
-after each round using the LLM's suggestions.
+after each round using the LLM's suggestions. The script automatically
+adds the repository's `configs` directory to Hydra's search path so that
+generated configuration files can reference existing config groups.
+
 
 ## 🎓 6. Citations
 
