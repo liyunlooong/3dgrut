@@ -17,7 +17,6 @@ import os
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Optional, Union
-from contextlib import nullcontext
 
 import numpy as np
 
@@ -109,22 +108,14 @@ class Trainer3DGRUT:
         return Trainer3DGRUT(conf)
 
     @torch.cuda.nvtx.range("setup-trainer")
-    def __init__(self, conf: DictConfig, device=None, report_hook=None):
-        """Set up a new training session, or continue an existing one.
-
-        Args:
-            conf: Parsed hydra configuration.
-            device: Torch device to run on.
-            report_hook: Optional callable to report metrics during training.
-        """
+    def __init__(self, conf: DictConfig, device=None):
+        """Set up a new training session, or continue an existing one based on configuration"""
 
         # Keep track of useful fields
         self.conf = conf
         """ Global configuration of model, scene, optimization, etc"""
         self.device = device if device is not None else DEFAULT_DEVICE
         """ Device used for training and visualizations """
-        self.use_amp = getattr(conf, "enable_amp", False)
-        self.scaler = torch.cuda.amp.GradScaler(enabled=self.use_amp)
         self.rank = dist.get_rank() if dist.is_available() and dist.is_initialized() else 0
         self.global_step = 0
         """ Current global iteration of the trainer """
@@ -145,7 +136,6 @@ class Trainer3DGRUT:
         logger.log_rule("Setup Model Weights & Training")
         self.init_metrics()
         self.setup_training(conf, self.model, self.train_dataset)
-        self.report_hook = report_hook
         self.init_experiments_tracking(conf)
         self.init_gui(conf, self.model, self.train_dataset, self.val_dataset, self.scene_bbox)
 
@@ -562,8 +552,6 @@ class Trainer3DGRUT:
         for time_key in mean_timings:
             table[time_key] = f"{'{:.2f}'.format(mean_timings[time_key])}" + " ms/it"
         logger.log_table(f"📊 Validation Metrics - Step {global_step}", record=table)
-        if self.report_hook is not None:
-            self.report_hook({"psnr": mean_psnr, "loss": loss, "step": global_step})
 
     @torch.cuda.nvtx.range(f"log_training_iter")
     def log_training_iter(
@@ -771,16 +759,12 @@ class Trainer3DGRUT:
             # Compute the outputs of a single batch
             with torch.cuda.nvtx.range(f"train_{global_step}_fwd"):
                 profilers["inference"].start()
-                autocast_ctx = torch.cuda.amp.autocast if self.use_amp else nullcontext
-                with autocast_ctx():
-                    outputs = model(gpu_batch, train=True, frame_id=global_step)
+                outputs = model(gpu_batch, train=True, frame_id=global_step)
                 profilers["inference"].end()
 
             # Compute the losses of a single batch
             with torch.cuda.nvtx.range(f"train_{global_step}_loss"):
-                autocast_ctx = torch.cuda.amp.autocast if self.use_amp else nullcontext
-                with autocast_ctx():
-                    batch_losses = self.get_losses(gpu_batch, outputs)
+                batch_losses = self.get_losses(gpu_batch, outputs)
 
             # Backward strategy step
             with torch.cuda.nvtx.range(f"train_{global_step}_pre_bwd"):
@@ -789,7 +773,7 @@ class Trainer3DGRUT:
             # Back-propagate the gradients and update the parameters
             with torch.cuda.nvtx.range(f"train_{global_step}_bwd"):
                 profilers["backward"].start()
-                self.scaler.scale(batch_losses["total_loss"]).backward()
+                batch_losses["total_loss"].backward()
                 profilers["backward"].end()
 
             # Post backward strategy step
@@ -800,7 +784,6 @@ class Trainer3DGRUT:
 
             # Optimizer step
             with torch.cuda.nvtx.range(f"train_{global_step}_backprop"):
-                self.scaler.unscale_(model.optimizer)
                 if isinstance(model.optimizer, SelectiveAdam):
                     assert outputs['mog_visibility'].shape == model.density.shape, f"Visibility shape {outputs['mog_visibility'].shape} does not match density shape {model.density.shape}"
                     model.optimizer.step(outputs['mog_visibility'])
@@ -811,7 +794,6 @@ class Trainer3DGRUT:
                 else:
                     model.optimizer.step()
                 model.optimizer.zero_grad()
-                self.scaler.update()
 
             # Scheduler step
             with torch.cuda.nvtx.range(f"train_{global_step}_scheduler"):
@@ -887,11 +869,9 @@ class Trainer3DGRUT:
             # Compute the outputs of a single batch
             with torch.cuda.nvtx.range(f"train.validation_step_{self.global_step}"):
                 profilers["inference"].start()
-                autocast_ctx = torch.cuda.amp.autocast if self.use_amp else nullcontext
-                with autocast_ctx():
-                    outputs = self.model(gpu_batch, train=False)
-                    batch_losses = self.get_losses(gpu_batch, outputs)
+                outputs = self.model(gpu_batch, train=False)
                 profilers["inference"].end()
+                batch_losses = self.get_losses(gpu_batch, outputs)
                 batch_metrics = self.get_metrics(
                     gpu_batch, outputs, batch_losses, profilers, split="validation", iteration=val_iteration
                 )
