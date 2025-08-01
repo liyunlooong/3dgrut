@@ -9,6 +9,7 @@ import subprocess
 from pathlib import Path
 from typing import Dict, Any
 
+
 import yaml
 from omegaconf import OmegaConf
 from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
@@ -39,6 +40,7 @@ class LLMAutoTuner:
         self.overrides: Dict[str, Any] = overrides or {}
         # root directory that contains the repository configs
         self.config_root = self.base_config.parents[1]
+
         if openai is not None:
             key = api_key or os.getenv("OPENAI_API_KEY")
             if not key:
@@ -57,6 +59,7 @@ class LLMAutoTuner:
             "--config-name",
             config.name,
             f"hydra.searchpath=[file://{self.config_root.resolve()}]",
+
         ]
         env = os.environ.copy()
         env["HYDRA_FULL_ERROR"] = "1"
