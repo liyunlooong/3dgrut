@@ -49,6 +49,7 @@ To mitigate this limitation, we also propose 3DGUT, which enables support for di
   - [To visualize a pre-trained checkpoint](#to-visualize-a-pre-trained-checkpoint)
 - [📋 4. Evaluations](#-4-evaluations)
 - [🛝 5. Interactive Playground GUI](#-5-interactive-playground-gui)
+- [🤖 LLM Hyperparameter Tuning](#-llm-hyperparameter-tuning)
 - [🎓 6. Citations](#-6-citations)
 - [🙏 7. Acknowledgements](#-7-acknowledgements)
 
@@ -405,7 +406,32 @@ python playground.py --gs_object <ckpt_path>
 See [Playground README](threedgrut_playground/README.md) for details.
 
 *Update (2025/04): The playground engine is now exposed and remote rendering is supported,
+
 see README for details.*
+
+## 🤖 LLM Hyperparameter Tuning
+
+The script `llm_tuner.py` automates hyperparameter search. After each
+training run it summarizes validation PSNR and convergence speed and
+sends this information to a language model which proposes new
+parameters. Set your OpenAI API key via the `OPENAI_API_KEY` environment
+variable (or pass `--api-key` on the command line) and invoke the tuner:
+
+```bash
+export OPENAI_API_KEY="sk-..."  # or pass --api-key
+python llm_tuner.py configs/apps/colmap_3dgrt.yaml tuner_out \
+  --rounds 3 \
+  -o path=/data14/yunlong.li.2507/mipnerf360_dataset/bonsai \
+  -o out_dir=runs \
+  -o experiment_name=bonsai_3dgrt \
+  -o dataset.downsample_factor=2 \
+  -o optimizer.type=sghmc
+```
+
+The tuner iteratively launches training rounds, updating the overrides
+after each round using the LLM's suggestions.
+
+## 🎓 6. Citations
 
 
 ## 🎓 6. Citations
